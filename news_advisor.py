@@ -41,7 +41,7 @@ class NewsSentimentRiskAdvisor:
             "cpi", "fomc", "federal reserve", "fed interest rate", "powell", "non-farm payroll", "nfp", "unemployment rate"
         ]
 
-    def evaluate_news_and_risk(self, news_articles: list, macro_events: list, crypto_events: list = None, asset: str = "OVERALL") -> dict:
+    def evaluate_news_and_risk(self, news_articles=None, macro_events=None, crypto_events=None, asset: str = "OVERALL", *args, **kwargs) -> dict:
         """
         Synthesizes news and economic calendar releases specifically for:
         - 'BTC': Bitcoin news, ETF flows, and crypto macro catalysts.

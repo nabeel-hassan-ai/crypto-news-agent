@@ -5,8 +5,11 @@ import json
 import time
 from datetime import datetime
 from config import SOURCES_CONFIG
+import importlib
 from collectors import collect_all_data, fetch_live_market_context, fetch_technical_indicators
 from analyzer import CryptoNewsAnalyzer
+import news_advisor
+importlib.reload(news_advisor)
 from news_advisor import NewsSentimentRiskAdvisor
 
 st.set_page_config(
@@ -249,12 +252,19 @@ else:
 
 # Evaluate dedicated advisor for chosen asset
 advisor = NewsSentimentRiskAdvisor()
-advisor_data = advisor.evaluate_news_and_risk(
-    raw_data.get("news_articles", []),
-    raw_data.get("macro_events", []),
-    raw_data.get("crypto_calendar_events", []),
-    asset=chosen_asset_key
-)
+try:
+    advisor_data = advisor.evaluate_news_and_risk(
+        raw_data.get("news_articles", []),
+        raw_data.get("macro_events", []),
+        raw_data.get("crypto_calendar_events", []),
+        asset=chosen_asset_key
+    )
+except TypeError:
+    advisor_data = advisor.evaluate_news_and_risk(
+        raw_data.get("news_articles", []),
+        raw_data.get("macro_events", []),
+        raw_data.get("crypto_calendar_events", [])
+    )
 
 # ----------------- THE TWO CORE QUESTIONS DISPLAY -----------------
 col_q1, col_q2 = st.columns(2)

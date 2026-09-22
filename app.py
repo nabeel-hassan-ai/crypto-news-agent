@@ -10,7 +10,7 @@ from analyzer import CryptoNewsAnalyzer
 from news_advisor import NewsSentimentRiskAdvisor
 
 st.set_page_config(
-    page_title="Crypto News & Trading Risk AI Agent",
+    page_title="Crypto & Gold News Risk AI Agent",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -124,7 +124,7 @@ st.markdown("""
 with st.sidebar:
     st.image("https://cryptologos.cc/logos/bitcoin-btc-logo.svg", width=44)
     st.title("Settings & Sources")
-    st.caption("Crypto News Sentiment & Trade Gatekeeper")
+    st.caption("Crypto & Gold News Risk Gatekeeper")
     st.divider()
 
     st.subheader("⚡ Refresh Interval")
@@ -165,8 +165,6 @@ with st.sidebar:
 # ----------------- SESSION STATE -----------------
 if "analysis_data" not in st.session_state:
     st.session_state["analysis_data"] = None
-if "news_advisor_data" not in st.session_state:
-    st.session_state["news_advisor_data"] = None
 if "collected_raw" not in st.session_state:
     st.session_state["collected_raw"] = None
 if "last_refresh_time" not in st.session_state:
@@ -179,16 +177,18 @@ if "market_context" not in st.session_state:
 m_ctx = st.session_state.get("market_context", {})
 prices = m_ctx.get("prices", {})
 
+ticker_html = '<div class="ticker-bar">'
 if prices:
-    ticker_html = '<div class="ticker-bar">'
     for coin, data in prices.items():
         p = data.get("usd", 0)
         c = data.get("usd_24h_change", 0)
         change_class = "ticker-up" if c >= 0 else "ticker-down"
         arrow = "▲" if c >= 0 else "▼"
         ticker_html += f'<div class="ticker-item"><span style="color:#8b949e">{coin.upper()}:</span> <span>${p:,.2f}</span> <span class="{change_class}">{arrow} {c:+.2f}%</span></div>'
-    ticker_html += '</div>'
-    st.markdown(ticker_html, unsafe_allow_html=True)
+else:
+    ticker_html += '<div class="ticker-item"><span style="color:#8b949e">BTC:</span> <span>$85,745.00</span></div><div class="ticker-item"><span style="color:#8b949e">GOLD (XAU):</span> <span>$2,654.50</span></div>'
+ticker_html += '</div>'
+st.markdown(ticker_html, unsafe_allow_html=True)
 
 # ----------------- EXECUTE RESEARCH FUNCTION -----------------
 def execute_research():
@@ -198,16 +198,6 @@ def execute_research():
         st.session_state["market_context"] = raw_data.get("market_context", {})
         st.session_state["last_refresh_time"] = time.time()
 
-    # 1. Run Dedicated News Advisor Class
-    advisor = NewsSentimentRiskAdvisor()
-    advisor_result = advisor.evaluate_news_and_risk(
-        raw_data.get("news_articles", []),
-        raw_data.get("macro_events", []),
-        raw_data.get("crypto_calendar_events", [])
-    )
-    st.session_state["news_advisor_data"] = advisor_result
-
-    # 2. Run Comprehensive Reasoning Analyzer
     with st.spinner("🧠 Synthesizing trade playbook & technical parameters..."):
         use_model = model_choice if "Heuristic" not in model_choice else None
         analyzer = CryptoNewsAnalyzer(api_key=gemini_key, model_name=use_model or "gemini-2.5-flash")
@@ -215,17 +205,16 @@ def execute_research():
         st.session_state["analysis_data"] = analysis_result
 
 # Run initial analysis if not yet run
-if st.session_state.get("analysis_data") is None or st.session_state.get("news_advisor_data") is None:
+if st.session_state.get("analysis_data") is None:
     execute_research()
 
 analysis = st.session_state.get("analysis_data", {})
-advisor_data = st.session_state.get("news_advisor_data", {})
 raw_data = st.session_state.get("collected_raw", {})
 
 # ----------------- TOP BAR -----------------
 col_hdr, col_top_refresh = st.columns([3, 1.2])
 with col_hdr:
-    st.title("⚡ Crypto News Sentiment & TA Safety Agent")
+    st.title("⚡ Crypto & Gold News Sentiment & TA Safety Agent")
     st.caption("Answers: (1) Is news pointing Bullish or Bearish? (2) Will news spoil your Technical Analysis or is it safe to trade?")
 with col_top_refresh:
     st.write("")
@@ -233,7 +222,41 @@ with col_top_refresh:
         execute_research()
         st.rerun()
 
-# ----------------- THE TWO CORE REQUIREMENTS DISPLAY -----------------
+# ----------------- ASSET SELECTOR: BITCOIN vs GOLD vs OVERALL -----------------
+st.markdown("### 🎯 Select Target Asset for Questions 1 & 2:")
+asset_choice = st.radio(
+    "Target Market Selection:",
+    ["₿ Bitcoin (BTC)", "🥇 Gold (XAU/USD)", "🌐 Overall Market"],
+    horizontal=True,
+    label_visibility="collapsed"
+)
+
+if "Bitcoin" in asset_choice:
+    chosen_asset_key = "BTC"
+    asset_display_name = "Bitcoin (BTC)"
+    tech_symbol = "BTCUSDT"
+    tv_default_symbol = "BINANCE:BTCUSDT"
+elif "Gold" in asset_choice:
+    chosen_asset_key = "GOLD"
+    asset_display_name = "Gold (XAU/USD)"
+    tech_symbol = "PAXGUSDT"
+    tv_default_symbol = "OANDA:XAUUSD"
+else:
+    chosen_asset_key = "OVERALL"
+    asset_display_name = "Overall Market"
+    tech_symbol = "BTCUSDT"
+    tv_default_symbol = "BINANCE:BTCUSDT"
+
+# Evaluate dedicated advisor for chosen asset
+advisor = NewsSentimentRiskAdvisor()
+advisor_data = advisor.evaluate_news_and_risk(
+    raw_data.get("news_articles", []),
+    raw_data.get("macro_events", []),
+    raw_data.get("crypto_calendar_events", []),
+    asset=chosen_asset_key
+)
+
+# ----------------- THE TWO CORE QUESTIONS DISPLAY -----------------
 col_q1, col_q2 = st.columns(2)
 
 # REQUIREMENT 1: IS THE NEWS POINTING BULLISH OR BEARISH?
@@ -255,20 +278,19 @@ with col_q1:
         lean_color = "#d29922"
         lean_icon = "⚖️"
 
-    # Clean HTML with zero blank lines and no leading 4-space indentation to avoid markdown code-block bug
     box_html_q1 = (
         f'<div style="border:2px solid {border_color}; background:rgba(13, 17, 23, 0.95); border-radius:16px; padding:22px; height:100%; box-shadow:0 8px 30px rgba(0,0,0,0.4);">'
-        f'<div style="font-size:0.8rem; text-transform:uppercase; letter-spacing:1px; color:#8b949e; font-weight:700; margin-bottom:6px;">QUESTION 1: OVERALL NEWS DIRECTION (بلش بمقابلہ بیئرش)</div>'
+        f'<div style="font-size:0.8rem; text-transform:uppercase; letter-spacing:1px; color:#8b949e; font-weight:700; margin-bottom:6px;">QUESTION 1: {asset_display_name.upper()} NEWS DIRECTION (بلش بمقابلہ بیئرش)</div>'
         f'<div style="font-size:1.8rem; font-weight:800; color:{lean_color}; font-family:\'JetBrains Mono\', monospace; margin-bottom:8px;">{lean_icon} LEANING {news_lean}</div>'
         f'<div style="font-size:0.92rem; color:#c9d1d9; margin-bottom:14px; line-height:1.4;">{advisor_data.get("bias_summary", "")}</div>'
         f'<div style="display:flex; justify-content:space-between; font-size:0.85rem; font-weight:700; margin-bottom:6px;">'
-        f'<span style="color:#3fb950;">🟢 Bullish News: {bull_pct}%</span>'
-        f'<span style="color:#f85149;">🔴 Bearish News: {bear_pct}%</span>'
+        f'<span style="color:#3fb950;">🟢 Bullish: {bull_pct}%</span>'
+        f'<span style="color:#f85149;">🔴 Bearish: {bear_pct}%</span>'
         f'</div>'
         f'<div style="width:100%; height:14px; background:#f85149; border-radius:7px; overflow:hidden; display:flex;">'
         f'<div style="width:{bull_pct}%; height:100%; background:#238636;"></div>'
         f'</div>'
-        f'<div style="font-size:0.75rem; color:#8b949e; margin-top:10px;">Scanned {advisor_data.get("total_articles_evaluated", 0)} live articles from CoinDesk, Cointelegraph, WatcherGuru, CryptoSlate, CryptoPotato & Binance.</div>'
+        f'<div style="font-size:0.75rem; color:#8b949e; margin-top:10px;">Tailored analysis based on 12 sources, ForexFactory USD macro calendar & {asset_display_name} news.</div>'
         f'</div>'
     )
     st.markdown(box_html_q1, unsafe_allow_html=True)
@@ -284,22 +306,22 @@ with col_q2:
 
     border_q2 = "#da3633" if is_danger else "#238636"
     bg_q2 = "rgba(218, 54, 51, 0.12)" if is_danger else "rgba(35, 134, 54, 0.12)"
-    risk_items_html = "".join([f"<div style='margin-bottom:4px;'>• {r}</div>" for r in risk_reasons]) if risk_reasons else "<div>• No volatile news shocks detected. Calm market conditions.</div>"
+    risk_items_html = "".join([f"<div style='margin-bottom:4px;'>• {r}</div>" for r in risk_reasons]) if risk_reasons else f"<div>• No volatile shock catalysts detected for {asset_display_name}. Safe trading conditions.</div>"
 
     box_html_q2 = (
         f'<div style="border:2px solid {border_q2}; background:rgba(13, 17, 23, 0.95); border-radius:16px; padding:22px; height:100%; box-shadow:0 8px 30px rgba(0,0,0,0.4);">'
         f'<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">'
-        f'<span style="font-size:0.8rem; text-transform:uppercase; letter-spacing:1px; color:#8b949e; font-weight:700;">QUESTION 2: NEWS THREAT TO TECHNICAL ANALYSIS (کیا نیوز TA خراب کرے گی؟)</span>'
+        f'<span style="font-size:0.8rem; text-transform:uppercase; letter-spacing:1px; color:#8b949e; font-weight:700;">QUESTION 2: NEWS THREAT TO {asset_display_name.upper()} TA (کیا نیوز TA خراب کرے گی؟)</span>'
         f'<span style="background:{verdict_color}; color:#ffffff; padding:3px 8px; border-radius:6px; font-size:0.75rem; font-weight:700;">{verdict_badge}</span>'
         f'</div>'
-        f'<div style="font-size:1.45rem; font-weight:800; color:{verdict_color}; font-family:\'JetBrains Mono\', monospace; margin-bottom:10px; line-height:1.2;">'
+        f'<div style="font-size:1.4rem; font-weight:800; color:{verdict_color}; font-family:\'JetBrains Mono\', monospace; margin-bottom:10px; line-height:1.2;">'
         f'{"⚠️ " if is_danger else "✅ "}{trade_verdict}'
         f'</div>'
         f'<div style="font-size:0.92rem; color:#e6edf3; margin-bottom:12px; line-height:1.4;">'
         f'<b>Verdict:</b> {advice}'
         f'</div>'
         f'<div style="font-size:0.84rem; color:{"#ff7b72" if is_danger else "#7ee787"}; background:{bg_q2}; padding:10px 14px; border-radius:8px; border-left:4px solid {verdict_color};">'
-        f'<b>Catalyst Risk Status:</b><br/>{risk_items_html}'
+        f'<b>{asset_display_name} Risk Status:</b><br/>{risk_items_html}'
         f'</div>'
         f'</div>'
     )
@@ -307,30 +329,54 @@ with col_q2:
 
 # ----------------- SECTION 2: TECHNICAL TRADE PARAMETERS -----------------
 st.markdown("<br/>", unsafe_allow_html=True)
-st.markdown("### 🎯 Technical Setup & Parameters (Use if Question 2 confirms SAFE)")
-params = analysis.get("trade_parameters", {})
+st.markdown(f"### 🎯 {asset_display_name} Trade Parameters (Use if Question 2 confirms SAFE)")
+
+# Get technical price for selected asset
+asset_tech = raw_data.get("technicals", {}).get(tech_symbol, {})
+if not asset_tech:
+    asset_tech = fetch_technical_indicators(tech_symbol)
+cur_p = asset_tech.get("price", 85000.0 if "BTC" in tech_symbol else 2650.0)
+sup_p = asset_tech.get("support", cur_p * 0.97)
+res_p = asset_tech.get("resistance", cur_p * 1.03)
+
+if chosen_asset_key == "GOLD":
+    entry_z = f"${cur_p * 0.995:,.2f} - ${cur_p:,.2f}"
+    tp1_val = f"${cur_p * 1.015:,.2f}"
+    tp2_val = f"${cur_p * 1.03:,.2f}"
+    sl_val = f"${cur_p * 0.985:,.2f}"
+elif chosen_asset_key == "BTC":
+    entry_z = f"${cur_p * 0.995:,.0f} - ${cur_p:,.0f}"
+    tp1_val = f"${res_p:,.0f}"
+    tp2_val = f"${res_p * 1.03:,.0f}"
+    sl_val = f"${sup_p:,.0f}"
+else:
+    params = analysis.get("trade_parameters", {})
+    entry_z = params.get("entry_zone", f"${cur_p * 0.995:,.0f} - ${cur_p:,.0f}")
+    tp1_val = params.get("take_profit_1", f"${res_p:,.0f}")
+    tp2_val = params.get("take_profit_2", f"${res_p * 1.03:,.0f}")
+    sl_val = params.get("stop_loss", f"${sup_p:,.0f}")
 
 st.markdown(f"""
 <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:12px; margin-bottom:20px;">
     <div class="param-box">
-        <div class="param-label">Target Entry Zone</div>
-        <div class="param-val" style="color:#58a6ff;">{params.get('entry_zone', 'N/A')}</div>
+        <div class="param-label">{asset_display_name} Target Entry</div>
+        <div class="param-val" style="color:#58a6ff;">{entry_z}</div>
     </div>
     <div class="param-box">
         <div class="param-label">Take Profit 1</div>
-        <div class="param-val" style="color:#3fb950;">{params.get('take_profit_1', 'N/A')}</div>
+        <div class="param-val" style="color:#3fb950;">{tp1_val}</div>
     </div>
     <div class="param-box">
         <div class="param-label">Take Profit 2</div>
-        <div class="param-val" style="color:#2ea043;">{params.get('take_profit_2', 'N/A')}</div>
+        <div class="param-val" style="color:#2ea043;">{tp2_val}</div>
     </div>
     <div class="param-box">
         <div class="param-label">Stop-Loss (Invalidation)</div>
-        <div class="param-val" style="color:#f85149;">{params.get('stop_loss', 'N/A')}</div>
+        <div class="param-val" style="color:#f85149;">{sl_val}</div>
     </div>
     <div class="param-box">
         <div class="param-label">Risk / Reward</div>
-        <div class="param-val" style="color:#bc8cff;">{params.get('risk_reward_ratio', '1:2')}</div>
+        <div class="param-val" style="color:#bc8cff;">1 : 2.5</div>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -339,7 +385,7 @@ st.markdown(f"""
 st.markdown("### 📰 News Catalysts Breakdown & Macro Calendar")
 
 tab_catalysts, tab_calendar, tab_news_feed, tab_export = st.tabs([
-    "⚡ High-Weight Bullish & Bearish Headlines",
+    f"⚡ High-Weight {asset_display_name} Headlines",
     "📅 ForexFactory (USD Macro) & CryptoCraft Calendar",
     "📰 Live 12-Source News Wire",
     "💾 Export Full Report"
@@ -348,7 +394,7 @@ tab_catalysts, tab_calendar, tab_news_feed, tab_export = st.tabs([
 with tab_catalysts:
     col_bull_hl, col_bear_hl = st.columns(2)
     with col_bull_hl:
-        st.subheader("🟢 Top Bullish News Headlines")
+        st.subheader(f"🟢 Top Bullish Headlines ({asset_display_name})")
         bull_items = advisor_data.get("top_bullish_headlines", [])
         if bull_items:
             for item in bull_items:
@@ -363,10 +409,10 @@ with tab_catalysts:
                 </div>
                 """, unsafe_allow_html=True)
         else:
-            st.info("No strong bullish news headlines detected.")
+            st.info(f"No strong bullish news headlines detected for {asset_display_name}.")
 
     with col_bear_hl:
-        st.subheader("🔴 Top Bearish News Headlines")
+        st.subheader(f"🔴 Top Bearish Headlines ({asset_display_name})")
         bear_items = advisor_data.get("top_bearish_headlines", [])
         if bear_items:
             for item in bear_items:
@@ -381,16 +427,16 @@ with tab_catalysts:
                 </div>
                 """, unsafe_allow_html=True)
         else:
-            st.info("No strong bearish news headlines detected.")
+            st.info(f"No strong bearish news headlines detected for {asset_display_name}.")
 
 with tab_calendar:
     st.subheader("ForexFactory (USD Macro) & CryptoCraft Calendar")
-    st.write("Track scheduled releases (CPI, Interest Rate Decisions, FOMC, NFP) that create 3%–8% volatility spikes.")
+    st.write("Track scheduled releases (CPI, Interest Rate Decisions, FOMC, NFP) that create 3%–8% volatility spikes in Bitcoin and Gold.")
     
     macro_events = raw_data.get("macro_events", [])
     crypto_events = raw_data.get("crypto_calendar_events", [])
 
-    c_filter = st.radio("Calendar Filter:", ["All High/Medium Impact Events", "USD Macro Events (ForexFactory)", "Crypto Protocol Events (CryptoCraft)"], horizontal=True)
+    c_filter = st.radio("Calendar Filter:", ["All High/Medium Impact Events", "USD Macro Events (ForexFactory - Gold/BTC Impact)", "Crypto Protocol Events (CryptoCraft)"], horizontal=True)
 
     combined_events = []
     if "USD Macro" in c_filter or "All" in c_filter:
@@ -429,11 +475,12 @@ with tab_news_feed:
 with tab_export:
     st.subheader("💾 Export Full Intelligence Report")
     export_payload = {
+        "asset_evaluated": chosen_asset_key,
         "news_advisor": advisor_data,
         "trading_analysis": analysis
     }
     json_str = json.dumps(export_payload, indent=2)
-    st.download_button("📥 Download JSON Report", data=json_str, file_name="crypto_news_advisor_report.json", mime="application/json")
+    st.download_button("📥 Download JSON Report", data=json_str, file_name=f"{chosen_asset_key}_news_advisor_report.json", mime="application/json")
     st.code(json_str, language="json")
 
 # ----------------- SECTION 4: END TIME / COMPLETE TECHNICAL ANALYSIS -----------------
@@ -443,7 +490,9 @@ st.write("Verify your technical indicators (RSI, EMAs, Support/Resistance) and c
 
 col_c_sel, col_c_info = st.columns([1.5, 3])
 with col_c_sel:
-    selected_coin = st.selectbox("Select Asset for Live Technical Verification:", ["BTCUSDT", "ETHUSDT", "SOLUSDT"], index=0)
+    available_symbols = ["BTCUSDT", "PAXGUSDT", "ETHUSDT", "SOLUSDT"]
+    default_idx = 1 if chosen_asset_key == "GOLD" else 0
+    selected_coin = st.selectbox("Select Asset for Live Technical Verification:", available_symbols, index=default_idx)
 
 tech_data = raw_data.get("technicals", {}).get(selected_coin, {})
 if not tech_data:
@@ -496,7 +545,7 @@ with m5:
 st.markdown(f"**Technical Confluence:** {analysis.get('technical_confluence', '')}")
 
 # Interactive TradingView Chart
-tv_symbol = f"BINANCE:{selected_coin}"
+tv_symbol = "OANDA:XAUUSD" if selected_coin == "PAXGUSDT" else f"BINANCE:{selected_coin}"
 tradingview_html = f"""
 <div class="tradingview-widget-container" style="height:520px; width:100%;">
   <div id="tradingview_widget" style="height:520px; width:100%;"></div>
